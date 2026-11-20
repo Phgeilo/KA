@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Duo Player – Spotify und YouTube gleichzeitig</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #e6eaf0;
+    --panel: #f6f8fb;
+    --ink: #16203a;
+    --muted: #5a6683;
+    --line: #c9d1de;
+    --spot: #12805a;
+    --yt: #d6382e;
+    --field: #ffffff;
+    --on-accent: #ffffff;
+    --strip: calc(152px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141a2b; --panel: #1d2540; --ink: #e8ecf6; --muted: #9aa5c4;
+      --line: #313b5e; --spot: #3ddc97; --yt: #ff6b5e; --field: #141a2b; --on-accent: #0e1424;
+    }
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); scroll-snap-type: y proximity; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.45; -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 20px 20px 24px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+  header p { margin: 0; color: var(--muted); font-size: .95rem; }
+
+  .stage { display: grid; grid-template-columns: 1fr; gap: 18px; }
+
+  .channel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-top: 6px solid var(--accent); border-radius: 14px; padding: 16px;
+  }
+  .channel.spot { --accent: var(--spot); }
+  .channel.yt   { --accent: var(--yt); scroll-snap-align: start; min-height: calc(100dvh - 24px); }
+  .channel h2 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 700; color: var(--accent); }
+
+  .row { display: flex; gap: 8px; margin-bottom: 14px; }
+  input[type="url"] {
+    flex: 1; min-width: 0; font: inherit; font-size: 16px;
+    color: var(--ink); background: var(--field);
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  input:focus-visible, button:focus-visible, a.btn:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  button, a.btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    font: inherit; font-weight: 700; font-size: 1rem; text-decoration: none;
+    color: var(--on-accent); background: var(--accent);
+    border: 0; border-radius: 10px; padding: 12px 18px; min-height: 46px; cursor: pointer;
+  }
+  .ghost { background: transparent !important; color: var(--ink) !important; border: 1px solid var(--line) !important; }
+  button:active { transform: translateY(1px); }
+
+  .frame { border-radius: 12px; overflow: hidden; background: #000; }
+  .frame iframe { display: block; width: 100%; border: 0; }
+  .yt .frame { aspect-ratio: 16 / 9; width: 100%; max-height: calc(100dvh - 190px); margin-inline: auto; }
+  .yt .frame iframe { height: 100%; }
+
+  .tools { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .hint { margin: 12px 0 0; font-size: .88rem; color: var(--muted); }
+  .msg { min-height: 1.2em; margin: -6px 0 10px; font-size: .9rem; color: var(--yt); }
+  details { margin-top: 12px; font-size: .92rem; }
+  summary { cursor: pointer; font-weight: 700; min-height: 32px; }
+  details ol { margin: 8px 0 0; padding-left: 1.3em; color: var(--muted); }
+  details li { margin-bottom: 6px; }
+
+  /* ---------- Kino-Modus: Video fast vollbild, Spotify-Leiste unten ---------- */
+  #cinema-exit { display: none; }
+  body.cinema { overflow: hidden; }
+  body.cinema .wrap { padding: 0; max-width: none; }
+  body.cinema header,
+  body.cinema .channel > h2, body.cinema .channel > .row, body.cinema .channel > .msg,
+  body.cinema .channel > .hint, body.cinema .channel > .tools, body.cinema .channel > details,
+  body.cinema .spot-tools { display: none; }
+  body.cinema .channel { background: none; border: 0; padding: 0; min-height: 0; }
+  body.cinema .yt .frame {
+    position: fixed; z-index: 50; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: var(--strip);
+    aspect-ratio: auto; max-height: none; border-radius: 0;
+  }
+  body.cinema .spot .frame {
+    position: fixed; z-index: 60; left: 0; right: 0; bottom: 0; height: var(--strip);
+    border-radius: 0; background: var(--panel); padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body.cinema .spot .frame iframe { height: 100%; }
+  body.cinema #cinema-exit {
+    display: inline-flex; position: fixed; z-index: 70;
+    top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; transform: translateX(-50%);
+    min-height: 40px; padding: 8px 16px; font-size: .95rem; opacity: .85;
+    background: rgba(20,26,43,.78); color: #fff; backdrop-filter: blur(6px);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Duo Player</h1>
+    <p>Spotify oben, YouTube darunter. Beides läuft gleichzeitig.</p>
+  </header>
+
+  <main class="stage">
+    <!-- Spotify -->
+    <section class="channel spot" aria-labelledby="spot-h">
+      <h2 id="spot-h">Spotify</h2>
+      <div class="row">
+        <input id="spot-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off"
+               placeholder="Spotify-Link einfügen (Song, Playlist, Album, Podcast)" aria-label="Spotify-Link">
+        <button id="spot-go" type="button">Laden</button>
+      </div>
+      <div id="spot-msg" class="msg" role="status"></div>
+      <div class="frame"><iframe id="spot-frame" title="Spotify Player" height="352"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>
+      <div class="tools spot-tools">
+        <a class="btn" href="https://accounts.spotify.com/de/login?continue=https%3A%2F%2Fopen.spotify.com%2F" target="_blank" rel="noopener">Bei Spotify anmelden</a>
+        <button id="spot-reload" class="ghost" type="button">Player neu laden</button>
+        <a class="btn ghost" href="https://open.spotify.com/" target="_blank" rel="noopener">Spotify Web-Player öffnen</a>
+      </div>
+      <details>
+        <summary>Nur 30 Sekunden pro Song? So klappt es besser</summary>
+        <ol>
+          <li>Tippe auf „Bei Spotify anmelden“ und melde dich im neuen Tab an. Wechsle danach zurück und tippe auf „Player neu laden“.</li>
+          <li>Safari blockiert die Anmeldung oft im eingebetteten Player. Schalte dazu in den iPad-Einstellungen unter Safari „Websiteübergreifendes Tracking verhindern“ aus und lade die Seite neu.</li>
+          <li>Auf dem iPad spielt Spotify im Browser nur mit Premium ganze Songs. Ohne Premium bleibt es bei Ausschnitten.</li>
+          <li>Klappt es trotzdem nicht: Öffne den Spotify Web-Player in Split View neben dieser Seite.</li>
+        </ol>
+      </details>
+    </section>
+
+    <!-- YouTube -->
+    <section class="channel yt" aria-labelledby="yt-h">
+      <h2 id="yt-h">YouTube</h2>
+      <div class="row">
+        <input id="yt-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off"
+               placeholder="YouTube-Link einfügen (Video, Short, Playlist)" aria-label="YouTube-Link">
+        <button id="yt-go" type="button">Laden</button>
+      </div>
+      <div id="yt-msg" class="msg" role="status"></div>
+      <div class="frame"><iframe id="yt-frame" title="YouTube Player"
+        allow="autoplay; encrypted-media; picture-in-picture" loading="lazy"></iframe></div>
+      <div class="tools">
+        <button id="cinema-on" type="button">Kino-Modus</button>
+        <button id="yt-mute" class="ghost" type="button" aria-pressed="false">Video stumm schalten</button>
+        <button id="yt-play" class="ghost" type="button">Pause / Weiter</button>
+      </div>
+      <p class="hint">Der Kino-Modus füllt den Bildschirm mit dem Video, Spotify bleibt als Leiste unten bedienbar. Die normale Vollbild-Taste im Video würde die Musik stoppen, deshalb ist sie hier abgeschaltet.</p>
+    </section>
+  </main>
+</div>
+
+<button id="cinema-exit" type="button">Kino-Modus beenden</button>
+
+<script>
+(function () {
+  var DEFAULT_SPOTIFY = "https://open.spotify.com/playlist/37i9dQZF1DX4sWSpwq3LiO";
+  var DEFAULT_YT = "https://www.youtube.com/watch?v=jfKfPfyJRdk";
+  var $ = function (id) { return document.getElementById(id); };
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  /* ---------- Spotify ---------- */
+  function parseSpotify(s) {
+    s = (s || "").trim();
+    var m = s.match(/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(track|album|playlist|episode|show|artist)\/([A-Za-z0-9]+)/) ||
+            s.match(/^spotify:(track|album|playlist|episode|show|artist):([A-Za-z0-9]+)$/);
+    return m ? { type: m[1], id: m[2] } : null;
+  }
+  var spotSrc = "";
+  function setSpotify(input, silent) {
+    var p = parseSpotify(input);
+    if (!p) { $("spot-msg").textContent = "Das ist kein gültiger Spotify-Link."; return; }
+    $("spot-msg").textContent = "";
+    $("spot-frame").height = (p.type === "track" || p.type === "episode") ? "152" : "352";
+    spotSrc = "https://open.spotify.com/embed/" + p.type + "/" + p.id + "?theme=0";
+    $("spot-frame").src = spotSrc;
+    $("spot-url").value = input.trim();
+    if (!silent) save("duo.spotify", input.trim());
+  }
+  $("spot-reload").addEventListener("click", function () {
+    if (!spotSrc) return;
+    var f = $("spot-frame"); f.src = "about:blank";
+    setTimeout(function () { f.src = spotSrc; }, 150);
+  });
+
+  /* ---------- YouTube ---------- */
+  function parseYouTube(s) {
+    s = (s || "").trim();
+    var vid = null, list = null, m;
+    if ((m = s.match(/[?&]list=([A-Za-z0-9_-]+)/))) list = m[1];
+    if ((m = s.match(/youtu\.be\/([A-Za-z0-9_-]{11})/))) vid = m[1];
+    else if ((m = s.match(/[?&]v=([A-Za-z0-9_-]{11})/))) vid = m[1];
+    else if ((m = s.match(/youtube(?:-nocookie)?\.com\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{11})/))) vid = m[1];
+    else if (/^[A-Za-z0-9_-]{11}$/.test(s)) vid = s;
+    return (vid || list) ? { vid: vid, list: list } : null;
+  }
+  var ytPlaying = false;
+  function setYouTube(input, silent) {
+    var p = parseYouTube(input);
+    if (!p) { $("yt-msg").textContent = "Das ist kein gültiger YouTube-Link."; return; }
+    $("yt-msg").textContent = "";
+    // fs=0 blendet die Vollbild-Taste aus (sie würde die Musik stoppen)
+    var q = "?enablejsapi=1&playsinline=1&rel=0&fs=0";
+    var base = "https://www.youtube-nocookie.com/embed/";
+    $("yt-frame").src = p.vid ? base + p.vid + q + (p.list ? "&list=" + p.list : "")
+                              : base + "videoseries" + q + "&list=" + p.list;
+    $("yt-url").value = input.trim();
+    $("yt-mute").setAttribute("aria-pressed", "false");
+    $("yt-mute").textContent = "Video stumm schalten";
+    ytPlaying = false;
+    if (!silent) save("duo.youtube", input.trim());
+  }
+  function ytCmd(func) {
+    var w = $("yt-frame").contentWindow;
+    if (w) w.postMessage(JSON.stringify({ event: "command", func: func, args: [] }), "*");
+  }
+  $("yt-mute").addEventListener("click", function () {
+    var muted = this.getAttribute("aria-pressed") === "true";
+    ytCmd(muted ? "unMute" : "mute");
+    this.setAttribute("aria-pressed", String(!muted));
+    this.textContent = muted ? "Video stumm schalten" : "Ton einschalten";
+  });
+  $("yt-play").addEventListener("click", function () {
+    ytCmd(ytPlaying ? "pauseVideo" : "playVideo");
+    ytPlaying = !ytPlaying;
+  });
+
+  /* ---------- Kino-Modus ---------- */
+  function cinema(on) {
+    document.body.classList.toggle("cinema", on);
+    if (!on) $("yt-frame").scrollIntoView({ block: "start" });
+  }
+  $("cinema-on").addEventListener("click", function () { cinema(true); });
+  $("cinema-exit").addEventListener("click", function () { cinema(false); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") cinema(false); });
+
+  /* ---------- Eingaben ---------- */
+  $("spot-go").addEventListener("click", function () { setSpotify($("spot-url").value); });
+  $("yt-go").addEventListener("click", function () { setYouTube($("yt-url").value); });
+  $("spot-url").addEventListener("keydown", function (e) { if (e.key === "Enter") setSpotify(this.value); });
+  $("yt-url").addEventListener("keydown", function (e) { if (e.key === "Enter") setYouTube(this.value); });
+
+  setSpotify(load("duo.spotify") || DEFAULT_SPOTIFY, true);
+  setYouTube(load("duo.youtube") || DEFAULT_YT, true);
+})();
+</script>
+</body>
+</html>
